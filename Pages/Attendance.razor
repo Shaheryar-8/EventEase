@@ -1,0 +1,109 @@
+@page "/attendance"
+@page "/attendance/{EventId:int}"
+@inject EventService Events
+@inject RegistrationService Registrations
+@inject NavigationManager Nav
+
+<PageTitle>Attendance · EventEase</PageTitle>
+
+<h1>Attendance tracker</h1>
+<p class="text-muted">Pick an event, then tick people off as they arrive.</p>
+
+@if (_events is null)
+{
+    <p class="text-muted">Loading…</p>
+}
+else
+{
+    <div class="toolbar">
+        <label class="form-label mb-0" for="eventPicker">Event</label>
+        <select id="eventPicker" class="form-select" value="@(EventId?.ToString() ?? "")" @onchange="PickEvent">
+            <option value="">Choose an event…</option>
+            @foreach (var e in _events)
+            {
+                <option value="@e.Id">@e.Name (@e.Date.ToString("dd MMM"))</option>
+            }
+        </select>
+    </div>
+
+    @if (EventId is not null && _selected is null)
+    {
+        <NotFoundMessage Title="Event not found" Message="@($"There is no event with id {EventId}.")" />
+    }
+    else if (_selected is not null)
+    {
+        <div class="stat-row">
+            <div class="stat"><span>@_stats!.Registrations</span> registered</div>
+            <div class="stat"><span>@_stats.Attended</span> attended</div>
+            <div class="stat"><span>@_stats.AttendanceRate.ToString("P0")</span> attendance rate</div>
+            <div class="stat"><span>@_stats.SeatsLeft</span> seats left</div>
+        </div>
+
+        @if (_list.Count == 0)
+        {
+            <p class="text-muted">Nobody has registered for this event yet. <a href="@($"events/{_selected.Id}/register")">Add the first registration</a>.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr><th>Attended</th><th>Name</th><th>Email</th><th>Seats</th><th>Registered</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in _list)
+                        {
+                            <tr @key="r.Id" class="@(r.Attended ? "table-success" : "")">
+                                <td>
+                                    <input type="checkbox" class="form-check-input" aria-label="@($"Mark {r.FullName} as attended")"
+                                           checked="@r.Attended" @onchange="e => ToggleAsync(r, (bool)e.Value!)" />
+                                </td>
+                                <td>@r.FullName</td>
+                                <td>@r.Email</td>
+                                <td>@r.Seats</td>
+                                <td>@r.RegisteredAt.ToString("dd MMM, h:mm tt")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public int? EventId { get; set; }
+
+    private IReadOnlyList<Event>? _events;
+    private Event? _selected;
+    private List<Registration> _list = new();
+    private AttendanceStats? _stats;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _events ??= await Events.GetAllAsync();
+        _selected = EventId is null ? null : await Events.GetByIdAsync(EventId.Value);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_selected is null) { _list.Clear(); _stats = null; return; }
+        _list = (await Registrations.ForEventAsync(_selected.Id)).ToList();
+        _stats = await Registrations.StatsAsync(_selected);
+    }
+
+    // The selected event lives in the URL, so the page can be bookmarked or refreshed.
+    private void PickEvent(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        Nav.NavigateTo(string.IsNullOrEmpty(value) ? "attendance" : $"attendance/{value}");
+    }
+
+    private async Task ToggleAsync(Registration r, bool attended)
+    {
+        await Registrations.SetAttendedAsync(r.Id, attended);
+        r.Attended = attended;
+        _stats = await Registrations.StatsAsync(_selected!);
+    }
+}

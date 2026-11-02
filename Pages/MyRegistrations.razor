@@ -1,0 +1,68 @@
+@page "/my-registrations"
+@implements IDisposable
+@inject UserSessionService Session
+@inject RegistrationService Registrations
+@inject EventService Events
+
+<PageTitle>My registrations · EventEase</PageTitle>
+
+<h1>My registrations</h1>
+
+@if (!_ready)
+{
+    <p class="text-muted">Loading…</p>
+}
+else if (!Session.IsSignedIn)
+{
+    <div class="alert alert-info">
+        Sign in with the email you registered with to see your events. <a href="account?returnUrl=my-registrations">Sign in</a>
+    </div>
+}
+else if (_items.Count == 0)
+{
+    <p>You have not registered for any events yet, @Session.Current!.Name. <a href="events">Find an event</a>.</p>
+}
+else
+{
+    <ul class="list-group">
+        @foreach (var (reg, evt) in _items)
+        {
+            <li class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2" @key="reg.Id">
+                <div>
+                    <a class="fw-semibold" href="@($"events/{reg.EventId}")">@(evt?.Name ?? "Removed event")</a>
+                    <div class="small text-muted">
+                        @(evt?.Date.ToString("ddd, dd MMM yyyy · h:mm tt")) · @reg.Seats seat(s)
+                    </div>
+                </div>
+                <span class="badge @(reg.Attended ? "text-bg-success" : "text-bg-light border")">
+                    @(reg.Attended ? "Attended" : "Registered")
+                </span>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private bool _ready;
+    private List<(Registration Reg, Event? Evt)> _items = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        await Session.InitializeAsync();
+        await LoadAsync();
+        _ready = true;
+    }
+
+    private async Task LoadAsync()
+    {
+        _items.Clear();
+        if (!Session.IsSignedIn) return;
+        foreach (var r in await Registrations.ForEmailAsync(Session.Current!.Email))
+            _items.Add((r, await Events.GetByIdAsync(r.EventId)));
+    }
+
+    private void OnSessionChanged() => InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
+
+    public void Dispose() => Session.Changed -= OnSessionChanged;
+}

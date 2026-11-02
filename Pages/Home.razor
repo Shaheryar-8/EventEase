@@ -1,0 +1,43 @@
+﻿@page "/"
+@inject EventService Events
+@inject RegistrationService Registrations
+@inject UserSessionService Session
+
+<PageTitle>EventEase · Plan, register, attend</PageTitle>
+
+<section class="hero">
+    <h1>@(Session.IsSignedIn ? $"Welcome back, {Session.Current!.Name}" : "Plan, register and attend events with ease")</h1>
+    <p class="lead">EventEase lists upcoming corporate and social events, lets people register in seconds and helps organisers track who attended.</p>
+    <a class="btn btn-primary btn-lg" href="events">Browse all events</a>
+</section>
+
+<h2 class="h4 mt-4 mb-3">Coming up next</h2>
+@if (_upcoming is null)
+{
+    <p class="text-muted">Loading events…</p>
+}
+else if (_upcoming.Count == 0)
+{
+    <p class="text-muted">No upcoming events right now.</p>
+}
+else
+{
+    <div class="event-grid">
+        @foreach (var item in _upcoming)
+        {
+            <EventCard @key="item.Id" Event="item" SeatsTaken="@_seats.GetValueOrDefault(item.Id)" />
+        }
+    </div>
+}
+
+@code {
+    private List<Event>? _upcoming;
+    private readonly Dictionary<int, int> _seats = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.InitializeAsync();
+        _upcoming = (await Events.GetAllAsync()).Where(e => e.Date >= DateTime.Now).Take(3).ToList();
+        foreach (var e in _upcoming) _seats[e.Id] = await Registrations.SeatsTakenAsync(e.Id);
+    }
+}

@@ -1,0 +1,32 @@
+@implements IDisposable
+@inject UserSessionService Session
+@inject NavigationManager Nav
+
+@if (Session.IsSignedIn)
+{
+    <span class="session-badge">Signed in as <strong>@Session.Current!.Name</strong></span>
+    <a class="btn btn-sm btn-outline-secondary" href="my-registrations">My registrations</a>
+    <button type="button" class="btn btn-sm btn-link" @onclick="SignOutAsync">Sign out</button>
+}
+else
+{
+    <a class="btn btn-sm btn-primary" href="account">Sign in</a>
+}
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += Refresh;
+        await Session.InitializeAsync();
+    }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+
+    private async Task SignOutAsync()
+    {
+        await Session.SignOutAsync();
+        Nav.NavigateTo("");
+    }
+
+    public void Dispose() => Session.Changed -= Refresh;
+}

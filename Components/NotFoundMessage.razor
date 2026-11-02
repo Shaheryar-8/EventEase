@@ -1,0 +1,13 @@
+<section class="empty-state" role="alert">
+    <h1>@Title</h1>
+    <p>@Message</p>
+    <div class="d-flex gap-2 justify-content-center">
+        <a class="btn btn-primary" href="events">Browse events</a>
+        <a class="btn btn-outline-secondary" href="">Go home</a>
+    </div>
+</section>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Not found";
+    [Parameter] public string Message { get; set; } = "We couldn't find what you were looking for.";
+}

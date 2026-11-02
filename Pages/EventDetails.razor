@@ -1,0 +1,78 @@
+@* The :int constraint means /events/abc never reaches this page (the router shows "Page not found"),
+   and an id that is a number but does not exist is handled below. *@
+@page "/events/{Id:int}"
+@inject EventService Events
+@inject RegistrationService Registrations
+
+@if (_loading)
+{
+    <p class="text-muted">Loading event…</p>
+}
+else if (_event is null)
+{
+    <PageTitle>Event not found · EventEase</PageTitle>
+    <NotFoundMessage Title="Event not found" Message="@($"There is no event with id {Id}. It may have been removed.")" />
+}
+else
+{
+    <PageTitle>@_event.Name · EventEase</PageTitle>
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="events">Events</a></li>
+            <li class="breadcrumb-item active" aria-current="page">@_event.Name</li>
+        </ol>
+    </nav>
+
+    <h1>@_event.Name</h1>
+    <p class="event-meta">@_event.Date.ToString("dddd, dd MMMM yyyy · h:mm tt") · @_event.Location</p>
+    <p class="lead">@_event.Description</p>
+
+    <div class="stat-row">
+        <div class="stat"><span>@_stats!.Seats</span> seats taken</div>
+        <div class="stat"><span>@_stats.SeatsLeft</span> seats left</div>
+        <div class="stat"><span>@_stats.Registrations</span> registrations</div>
+    </div>
+
+    @if (_event.Date < DateTime.Now)
+    {
+        <div class="alert alert-secondary">This event has already taken place. Registration is closed.</div>
+    }
+    else if (_stats.SeatsLeft == 0)
+    {
+        <div class="alert alert-warning">This event is full.</div>
+    }
+    else
+    {
+        <a class="btn btn-primary" href="@($"events/{_event.Id}/register")">Register for this event</a>
+    }
+
+    <h2 class="h5 mt-5">Quick edit</h2>
+    <p class="small text-muted">Two-way binding: the card edits a copy and writes it back to <code>_event</code> through <code>@@bind-Event</code>; <code>:after</code> then saves it.</p>
+    <div class="quick-edit">
+        <EventCard @bind-Event="_event" @bind-Event:after="SaveAsync" SeatsTaken="@_stats.Seats" Editable="true" />
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Event? _event;
+    private AttendanceStats? _stats;
+    private bool _loading = true;
+
+    private async Task SaveAsync()
+    {
+        if (_event is null) return;
+        await Events.UpdateAsync(_event);
+        _stats = await Registrations.StatsAsync(_event);
+    }
+
+    // OnParametersSetAsync (not OnInitializedAsync) so moving from /events/1 to /events/2 reloads the data.
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _event = await Events.GetByIdAsync(Id);
+        _stats = _event is null ? null : await Registrations.StatsAsync(_event);
+        _loading = false;
+    }
+}

@@ -1,0 +1,107 @@
+@page "/events"
+@implements IDisposable
+@inject EventService EventStore
+@inject RegistrationService Registrations
+
+<PageTitle>Events · EventEase</PageTitle>
+
+<h1>Events</h1>
+<p class="text-muted">Search the list, open an event for details, or edit an event card in place.</p>
+
+<div class="toolbar">
+    <label class="visually-hidden" for="search">Search events</label>
+    <input id="search" class="form-control" placeholder="Search by name or location…"
+           value="@_search" @oninput="OnSearchInput" maxlength="60" />
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="showPast" @bind="_showPast" @bind:after="ApplyFilter" />
+        <label class="form-check-label" for="showPast">Show past events</label>
+    </div>
+</div>
+
+@if (_all is null)
+{
+    <p class="text-muted">Loading events…</p>
+}
+else if (_filtered.Count == 0)
+{
+    <p class="text-muted">No events match “@_search”.</p>
+}
+else
+{
+    <p class="small text-muted">@_filtered.Count event(s)</p>
+    @* Virtualize only renders the rows that are on screen, so long lists stay fast. *@
+    <div class="event-list">
+        <Virtualize Items="_rows" Context="row" ItemSize="360" OverscanCount="2">
+            <div class="event-grid">
+                @foreach (var item in row)
+                {
+                    <EventCard @key="item.Id" Event="item" EventChanged="SaveAsync"
+                               SeatsTaken="@_seats.GetValueOrDefault(item.Id)" Editable="true" />
+                }
+            </div>
+        </Virtualize>
+    </div>
+}
+
+@if (_message is not null)
+{
+    <div class="alert alert-success mt-3" role="status">@_message</div>
+}
+
+@code {
+    private const int PerRow = 3;
+    private List<Event>? _all;
+    private List<Event> _filtered = new();
+    private List<List<Event>> _rows = new();
+    private readonly Dictionary<int, int> _seats = new();
+    private string _search = string.Empty;
+    private bool _showPast;
+    private string? _message;
+    private CancellationTokenSource? _debounce;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _all = (await EventStore.GetAllAsync()).ToList();
+        foreach (var e in _all) _seats[e.Id] = await Registrations.SeatsTakenAsync(e.Id);
+        ApplyFilter();
+    }
+
+    // Debounce typing: filter 250 ms after the last key press instead of on every key.
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        _search = (e.Value?.ToString() ?? string.Empty).Trim();
+        _debounce?.Cancel();
+        _debounce = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(250, _debounce.Token);
+            ApplyFilter();
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private void ApplyFilter()
+    {
+        if (_all is null) return;
+        var now = DateTime.Now;
+        _filtered = _all
+            .Where(e => _showPast || e.Date >= now)
+            .Where(e => _search.Length == 0
+                        || e.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                        || e.Location.Contains(_search, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        _rows = _filtered.Chunk(PerRow).Select(c => c.ToList()).ToList();
+    }
+
+    // Called by the EventCard through two-way binding (EventChanged) when an edit is saved.
+    private async Task SaveAsync(Event updated)
+    {
+        await EventStore.UpdateAsync(updated);
+        var index = _all!.FindIndex(e => e.Id == updated.Id);
+        if (index >= 0) _all[index] = updated;
+        ApplyFilter();
+        _message = $"Saved changes to “{updated.Name}”.";
+    }
+
+    public void Dispose() => _debounce?.Cancel();
+}
